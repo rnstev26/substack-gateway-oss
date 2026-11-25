@@ -10,6 +10,7 @@ from gateway_core.models.substack import (
     SubstackNotesPage,
     SubstackPostComment,
 )
+from gateway_notes.models import SubstackNoteDraft
 
 _log = logging.getLogger(__name__)
 
@@ -125,3 +126,21 @@ class NoteRepliesResponse(BaseModel):
     @classmethod
     def from_substack(cls, replies: list[SubstackPostComment]) -> NoteRepliesResponse:
         return cls(items=[NoteReplyItem.from_substack(c) for c in replies])
+
+
+class ScheduledNoteResponse(BaseModel):
+    id: int
+    body: str
+    scheduled_at: str
+
+    @classmethod
+    def from_substack(cls, draft: SubstackNoteDraft) -> ScheduledNoteResponse:
+        return cls(id=draft.id, body=draft.body, scheduled_at=draft.trigger_at or "")
+
+
+class ScheduledNotesResponse(BaseModel):
+    items: list[ScheduledNoteResponse]
+
+    @classmethod
+    def from_substack(cls, drafts: list[SubstackNoteDraft]) -> ScheduledNotesResponse:
+        return cls(items=[ScheduledNoteResponse.from_substack(d) for d in drafts])

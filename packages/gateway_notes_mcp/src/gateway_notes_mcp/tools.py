@@ -8,6 +8,8 @@ from gateway_notes.schemas import (
     NoteRepliesResponse,
     NoteReplyCreatedResponse,
     NoteResponse,
+    ScheduledNoteResponse,
+    ScheduledNotesResponse,
 )
 from gateway_notes.service import NotesService
 
@@ -56,3 +58,23 @@ async def list_note_replies(note_id: int, token: str | None = None) -> dict[str,
     async with _authenticated_clients(token) as (pub, sub):
         replies = await NotesService(pub, sub).list_note_replies(note_id)
     return NoteRepliesResponse.from_substack(replies).model_dump(exclude_none=True)
+
+
+async def schedule_note(
+    content: str, scheduled_at: str, token: str | None = None
+) -> dict[str, Any]:
+    async with _authenticated_clients(token) as (pub, sub):
+        draft = await NotesService(pub, sub).schedule_note(content, scheduled_at)
+    return ScheduledNoteResponse.from_substack(draft).model_dump()
+
+
+async def list_scheduled_notes(token: str | None = None) -> dict[str, Any]:
+    async with _authenticated_clients(token) as (pub, sub):
+        drafts = await NotesService(pub, sub).list_scheduled_notes()
+    return ScheduledNotesResponse.from_substack(drafts).model_dump()
+
+
+async def unschedule_note(note_id: int, token: str | None = None) -> str:
+    async with _authenticated_clients(token) as (pub, sub):
+        await NotesService(pub, sub).unschedule_note(note_id)
+    return f"Scheduled note {note_id} cancelled; it will not post."

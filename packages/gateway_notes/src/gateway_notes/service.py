@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from gateway_core.client.publication import PublicationClient
 from gateway_core.client.substack import SubstackClient
-from gateway_core.converters.markdown import markdown_to_note_payload
+from gateway_core.converters.markdown import markdown_to_doc, markdown_to_note_payload
 from gateway_core.models.substack import (
     SubstackAttachmentCreated,
     SubstackCommentBranchesResponse,
@@ -14,11 +15,42 @@ from gateway_core.models.substack import (
     SubstackNotesPage,
     SubstackPostComment,
 )
+from gateway_notes.models import (
+    SubstackNoteDraft,
+    SubstackNoteDraftCreated,
+    SubstackNoteDraftsPage,
+)
 
 _log = logging.getLogger(__name__)
 
 _LIKE_REACTION = "❤"
 _FOR_YOU_TAB_ID = "for-you"
+_REPLY_MIN_ROLE = "everyone"
+_DRAFTS_PAGE_LIMIT = 50
+
+# A scheduled note must sit far enough out to be reviewed and vetoed. Anything
+# sooner is refused, so scheduling can never stand in for posting now.
+DEFAULT_MIN_LEAD = timedelta(hours=48)
+_UNSCHEDULE_CUTOFF = timedelta(minutes=5)
+
+
+class ScheduleRefused(ValueError):
+    """The request would publish too soon, or would delete something not scheduled."""
+
+
+def _parse_when(value: str | datetime) -> datetime:
+    dt = (
+        value
+        if isinstance(value, datetime)
+        else datetime.fromisoformat(value.replace("Z", "+00:00"))
+    )
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def _to_trigger_at(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 class NotesService:
@@ -78,6 +110,80 @@ class NotesService:
         note = SubstackNoteCreated.model_validate(r.json())
         _log.debug("Created note id=%d", note.id)
         return note
+
+    async def schedule_note(
+        self,
+        content: str,
+        scheduled_at: str | datetime,
+        *,
+        now: datetime | None = None,
+        min_lead: timedelta = DEFAULT_MIN_LEAD,
+    ) -> SubstackNoteDraft:
+        """POST /comment/draft with trigger_at — a note that posts later, not now.
+
+        Refuses a time closer than ``min_lead``. After creating, reads the drafts
+        list back and fails loudly unless the new id is there with a trigger time.
+        """
+        when = _parse_when(scheduled_at)
+        current = (now or datetime.now(UTC)).astimezone(UTC)
+        if when - current < min_lead:
+            raise ScheduleRefused(
+                f"scheduled_at must be at least {min_lead} from now; got {_to_trigger_at(when)}"
+            )
+        doc = markdown_to_doc(content)
+        doc["attrs"] = {**doc.get("attrs", {}), "title": None}
+        payload = {
+            "bodyJson": doc,
+            "replyMinimumRole": _REPLY_MIN_ROLE,
+            "trigger_at": _to_trigger_at(when),
+        }
+        _log.debug("Scheduling note at %s", payload["trigger_at"])
+        r = await self._sub.post("comment/draft", json=payload)
+        created = SubstackNoteDraftCreated.model_validate(r.json())
+        draft = await self._find_scheduled(created.id)
+        if draft is None:
+            raise RuntimeError(
+                f"note {created.id} was created but is not in the scheduled list; "
+                "check it in the Substack composer under Drafts"
+            )
+        return draft
+
+    async def list_scheduled_notes(self) -> list[SubstackNoteDraft]:
+        """GET /feed/drafts — note drafts that carry a trigger time."""
+        r = await self._sub.get("feed/drafts", params={"limit": _DRAFTS_PAGE_LIMIT})
+        page = SubstackNoteDraftsPage.model_validate(r.json())
+        return [d for d in page.drafts if d.trigger_at]
+
+    async def unschedule_note(
+        self, note_id: int, *, now: datetime | None = None
+    ) -> None:
+        """DELETE /comment/{id}, only after confirming the id is a scheduled draft.
+
+        Substack has no unschedule-to-draft action for notes: cancelling deletes
+        the draft. The same DELETE also removes a published note, so it is sent
+        only for an id found in the scheduled list.
+        """
+        draft = await self._find_scheduled(note_id)
+        if draft is None:
+            raise ScheduleRefused(
+                f"note {note_id} is not a scheduled note draft; refusing to delete it"
+            )
+        # Between the check and the DELETE the note could go live; near its
+        # trigger time, refuse rather than risk deleting a just-published note.
+        current = (now or datetime.now(UTC)).astimezone(UTC)
+        if _parse_when(draft.trigger_at or "") - current < _UNSCHEDULE_CUTOFF:
+            raise ScheduleRefused(
+                f"note {note_id} posts within {_UNSCHEDULE_CUTOFF}; cancel it in the "
+                "Substack composer under Drafts instead"
+            )
+        _log.debug("Cancelling scheduled note id=%d", note_id)
+        await self._sub.delete(f"comment/{note_id}")
+
+    async def _find_scheduled(self, note_id: int) -> SubstackNoteDraft | None:
+        for draft in await self.list_scheduled_notes():
+            if draft.id == note_id:
+                return draft
+        return None
 
     async def get_notes_for_profile(
         self, profile_id: int, cursor: str | None = None

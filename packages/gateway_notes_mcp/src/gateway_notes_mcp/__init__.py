@@ -17,6 +17,9 @@ _FEATURES = (
     "mcp:notes:unlike",
     "mcp:notes:reply",
     "mcp:notes:replies:list",
+    "mcp:notes:schedule",
+    "mcp:notes:unschedule",
+    "mcp:notes:scheduled:list",
 )
 
 
@@ -27,8 +30,11 @@ def _register(mcp: FastMCP) -> None:
         get_note,
         like_note,
         list_note_replies,
+        list_scheduled_notes,
         reply_to_note,
+        schedule_note,
         unlike_note,
+        unschedule_note,
     )
 
     mcp.tool(
@@ -127,6 +133,43 @@ def _register(mcp: FastMCP) -> None:
             "substack_endpoint": "GET /reader/comment/{note_id}/replies",
         },
     )(list_note_replies)
+
+    mcp.tool(
+        description="Schedule a Substack note to post later. `scheduled_at` is an ISO-8601 timestamp (UTC recommended) at least 48 hours from now; sooner times are refused, so this never posts immediately. The note waits in the composer's Drafts until then. The `token` argument is optional: pass base64-encoded Substack credentials, or omit it if this deployment resolves credentials from the authenticated session.",
+        tags={"notes", "write", "schedule"},
+        annotations=ToolAnnotations(
+            title="Schedule Note",
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=True,
+        ),
+        meta={"category": "notes", "substack_endpoint": "POST /comment/draft"},
+    )(schedule_note)
+    mcp.tool(
+        description="List scheduled Substack notes (note drafts with a trigger time), with id, body and scheduled_at. The `token` argument is optional: pass base64-encoded Substack credentials, or omit it if this deployment resolves credentials from the authenticated session.",
+        tags={"notes", "read", "schedule"},
+        annotations=ToolAnnotations(
+            title="List Scheduled Notes",
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=True,
+        ),
+        meta={"category": "notes", "substack_endpoint": "GET /feed/drafts"},
+    )(list_scheduled_notes)
+    mcp.tool(
+        description="Cancel a scheduled Substack note by its numeric ID. Substack has no unschedule-to-draft for notes, so the scheduled note is deleted. Refuses any id that is not currently a scheduled note, so it cannot delete a published note. The `token` argument is optional: pass base64-encoded Substack credentials, or omit it if this deployment resolves credentials from the authenticated session.",
+        tags={"notes", "write", "delete", "schedule"},
+        annotations=ToolAnnotations(
+            title="Unschedule Note",
+            read_only_hint=False,
+            destructive_hint=True,
+            idempotent_hint=False,
+            open_world_hint=True,
+        ),
+        meta={"category": "notes", "substack_endpoint": "DELETE /comment/{note_id}"},
+    )(unschedule_note)
 
 
 def capability() -> McpCapability:

@@ -54,7 +54,15 @@ _BASE_TOOLS = frozenset(
         "get_post_growth",
     }
 )
-_SCHEDULE_TOOLS = frozenset({"schedule_draft", "unschedule_draft"})
+_SCHEDULE_TOOLS = frozenset(
+    {
+        "schedule_draft",
+        "unschedule_draft",
+        "schedule_note",
+        "unschedule_note",
+        "list_scheduled_notes",
+    }
+)
 
 
 def _fail(message: str, code: int = 2) -> None:
@@ -120,7 +128,7 @@ def main() -> None:
     parser.add_argument(
         "--allow-schedule",
         action="store_true",
-        help="also register schedule_draft and unschedule_draft",
+        help="also register the draft and note scheduling tools",
     )
     args = parser.parse_args()
 
