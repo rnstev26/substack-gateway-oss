@@ -44,6 +44,7 @@ _BASE_TOOLS = frozenset(
         "get_post_counts",
         "get_my_notes",
         "get_note",
+        "list_scheduled_notes",
         "get_dashboard_summary",
         "get_dashboard_period",
         "get_subscriber_timeseries",
@@ -60,7 +61,6 @@ _SCHEDULE_TOOLS = frozenset(
         "unschedule_draft",
         "schedule_note",
         "unschedule_note",
-        "list_scheduled_notes",
     }
 )
 

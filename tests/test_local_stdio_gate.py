@@ -19,7 +19,7 @@ def _load():
     return module
 
 
-_NOTE_SCHEDULE = {"schedule_note", "unschedule_note", "list_scheduled_notes"}
+_NOTE_SCHEDULE = {"schedule_note", "unschedule_note"}
 _PUBLIC_NOW = {
     "create_note",
     "reply_to_note",
@@ -35,6 +35,12 @@ def test_note_schedule_tools_are_schedule_gated_only() -> None:
     assert not (_NOTE_SCHEDULE & m._BASE_TOOLS)
 
 
+def test_scheduled_notes_list_is_a_base_read() -> None:
+    m = _load()
+    assert "list_scheduled_notes" in m._BASE_TOOLS
+    assert "list_scheduled_notes" not in m._SCHEDULE_TOOLS
+
+
 def test_no_immediate_public_write_tool_is_ever_registered() -> None:
     m = _load()
     assert not (_PUBLIC_NOW & (m._BASE_TOOLS | m._SCHEDULE_TOOLS))
@@ -47,4 +53,4 @@ async def test_note_schedule_tools_exist_in_the_gateway_build() -> None:
     mcp = FastMCP("t")
     capability().register(mcp)
     names = {t.name for t in await mcp.list_tools()}
-    assert _NOTE_SCHEDULE <= names
+    assert _NOTE_SCHEDULE | {"list_scheduled_notes"} <= names
