@@ -89,9 +89,12 @@ async def run(days: int, list_only: bool, launcher: str) -> int:
             state = _data(await client.call_tool("get_draft", {"draft_id": draft_id}))
             _say("Q5 read after unschedule", {k: state.get(k) for k in ("is_published", "scheduled_releases")})
         finally:
+            # Unschedule unconditionally: a schedule call that timed out may still have landed.
+            r = await client.call_tool("unschedule_draft", {"draft_id": draft_id}, raise_on_error=False)
             if scheduled:
-                _say("cleanup unschedule", _data(await client.call_tool("unschedule_draft", {"draft_id": draft_id})))
-            _say("delete_draft", _data(await client.call_tool("delete_draft", {"draft_id": draft_id})))
+                _say("cleanup unschedule is_error", r.is_error)
+            r = await client.call_tool("delete_draft", {"draft_id": draft_id}, raise_on_error=False)
+            _say("delete_draft", _data(r) if not r.is_error else "ERROR: delete failed, remove it by hand")
             gone = await client.call_tool("get_draft", {"draft_id": draft_id}, raise_on_error=False)
             _say("read after delete is_error", gone.is_error)
             if gone.is_error and gone.content:

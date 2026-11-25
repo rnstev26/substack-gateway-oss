@@ -77,7 +77,11 @@ def _read_cookie() -> str:
             os.close(_COOKIE_FD)
         except OSError:
             pass
-    value = b"".join(chunks).decode("utf-8", errors="strict").strip()
+    try:
+        value = b"".join(chunks).decode("utf-8", errors="strict").strip()
+    except UnicodeDecodeError:
+        # Generic message: the exception text would quote a byte of the value.
+        _fail("the Keychain item is not UTF-8 text")
     if not value:
         _fail("the Keychain item is empty")
     if any(c.isspace() for c in value):
